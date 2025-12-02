@@ -17,7 +17,7 @@ MOSI = 11
 RST = 12
 
 BL = 13
-S3 = 3  # Button S3 pin
+S3 = 15  # Button S3 pin (commonly GPIO 15 on WaveShare RP2040 boards)
 
 Vbat_Pin = 29
 width = 240
@@ -956,15 +956,21 @@ s = 00
 
 # === Main loop ===
 clock_needs_redraw = True  # Flag to track if clock face needs full redraw
+last_button_time = 0
+debounce_ms = 300  # 300ms debounce
+
 while True:
-    # Check button S3 (button is active low - pressed = 0)
-    if button_s3.value() == 0:
-        if not button_pressed:  # Button just pressed (debounce)
+    # Check button S3 (button is active low with PULL_UP - pressed = 0)
+    current_time_ms = time.ticks_ms()
+    button_state = button_s3.value()
+    
+    if button_state == 0:  # Button is pressed (LOW)
+        if not button_pressed and (time.ticks_diff(current_time_ms, last_button_time) > debounce_ms):
             button_pressed = True
+            last_button_time = current_time_ms
             show_steps = not show_steps  # Toggle display
             clock_needs_redraw = True  # Force redraw when switching back
             fake_steps += 153  # Add some fake steps each time button is pressed
-            time.sleep(0.3)  # Simple debounce delay
     else:
         button_pressed = False
     
