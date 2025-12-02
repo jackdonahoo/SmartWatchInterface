@@ -17,6 +17,7 @@ MOSI = 11
 RST = 12
 
 BL = 13
+S3 = 3  # Button S3 pin
 
 Vbat_Pin = 29
 width = 240
@@ -423,6 +424,12 @@ LCD.set_bl_pwm(65535)          # Brightness
 
 #qmi8658=QMI8658()             # Initialise gyro accl
 #Vbat= ADC(Pin(Vbat_Pin))      # Lipo voltage pin
+
+# Setup button S3
+button_s3 = Pin(S3, Pin.IN, Pin.PULL_UP)
+show_steps = False  # Track which screen to show
+button_pressed = False  # Debounce helper
+fake_steps = 7842  # Fake step count
 
 # ========== Start of Triangles code =============
 # Modified from https://github.com/SpiderMaf/PiPicoDsply/blob/main/filled-triangles.py
@@ -872,6 +879,50 @@ def end_point(theta, rr): # Calculate end of hand offsets
     yy = -int(rr * math.cos(theta_rad))                     
     return xx,yy
 
+def draw_step_tracker(steps):
+    """Draw a fake step tracker display"""
+    clear(colour(0, 0, 0))  # Black background
+    
+    # Draw outer ring
+    ring(120, 120, 115, colour(50, 50, 100))
+    
+    # Draw title
+    cntr_st("STEPS", 30, 3, 100, 200, 255)
+    
+    # Draw large step count
+    steps_str = str(steps)
+    cntr_st(steps_str, 95, 3, 255, 255, 255)
+    
+    # Draw goal (10000 steps)
+    goal = 10000
+    cntr_st("Goal: 10,000", 140, 2, 150, 150, 150)
+    
+    # Draw progress bar
+    progress_pct = min(steps / goal, 1.0)
+    bar_width = 180
+    bar_height = 20
+    bar_x = 30
+    bar_y = 170
+    
+    # Draw bar outline
+    LCD.rect(bar_x, bar_y, bar_width, bar_height, colour(100, 100, 100))
+    
+    # Draw filled portion based on progress
+    filled_width = int(bar_width * progress_pct)
+    if filled_width > 0:
+        LCD.fill_rect(bar_x + 2, bar_y + 2, filled_width - 4, bar_height - 4, colour(0, 255, 100))
+    
+    # Draw percentage
+    pct_str = str(int(progress_pct * 100)) + "%"
+    cntr_st(pct_str, 200, 2, 200, 200, 200)
+    
+    # Draw distance estimate (assuming ~0.75m per step)
+    distance_km = (steps * 0.75) / 1000
+    dist_str = "{:.2f} km".format(distance_km)
+    cntr_st(dist_str, 220, 1, 150, 150, 255)
+    
+    LCD.show()
+
 # https://youtu.be/X6PRcno_WbQ
 clear(0)  # Clear the screen
 xc = 120  # Coordinates of centre
@@ -904,7 +955,44 @@ m = 28
 s = 00
 
 # === Main loop ===
+clock_needs_redraw = True  # Flag to track if clock face needs full redraw
 while True:
+    # Check button S3 (button is active low - pressed = 0)
+    if button_s3.value() == 0:
+        if not button_pressed:  # Button just pressed (debounce)
+            button_pressed = True
+            show_steps = not show_steps  # Toggle display
+            clock_needs_redraw = True  # Force redraw when switching back
+            fake_steps += 153  # Add some fake steps each time button is pressed
+            time.sleep(0.3)  # Simple debounce delay
+    else:
+        button_pressed = False
+    
+    # Display step tracker if enabled
+    if show_steps:
+        draw_step_tracker(fake_steps)
+        time.sleep(0.1)
+        continue  # Skip clock drawing
+    
+    # Draw clock face (only if returning from step tracker)
+    if clock_needs_redraw:
+        clear(0)  # Clear the screen
+        circle(xc,yc,120,colour(255,0,0)) # Large red circle
+        r = 120  # Tick outer radius
+        # Draw the scale ticks -  lines from centre
+        for p in range(0,360,6):
+            hxn_temp, hyn_temp = end_point(p, r)
+            LCD.line(120,120,120+hxn_temp,120+hyn_temp,colour(255,255,255))
+        # Clear centre leaving ring with white ticks
+        circle(xc,yc,110,colour(0,0,0))
+        # Draw the hour ticks
+        for p in range(0,360,30):
+            hxn_temp, hyn_temp = end_point(p, r)
+            LCD.line(120,120,120+hxn_temp,120+hyn_temp,colour(255,255,255))
+        # Clear centre leaving ring with white ticks
+        circle(xc,yc,100,colour(0,0,0))
+        clock_needs_redraw = False
+    
     s = s + 1              # Add a second
     if s == 60:            # Adjust secs, mins and hours as necessary
         s = 0
